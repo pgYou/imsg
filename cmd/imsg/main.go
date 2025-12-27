@@ -21,11 +21,11 @@ import (
 )
 
 var (
-	dbPath string
+	dbPath  string
+	version = "dev"
 )
 
 func main() {
-	version := "dev"
 	root := &cobra.Command{
 		Use:   "imsg",
 		Short: "Send and read iMessage / SMS from the terminal",
