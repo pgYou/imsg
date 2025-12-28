@@ -1,6 +1,6 @@
 {
   "name": "imsg",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "scripts": {
     "deps:patch": "swift package resolve && scripts/patch-deps.sh",
@@ -9,6 +9,6 @@
     "format": "swift format --in-place --recursive Sources Tests",
     "lint": "swift format lint --recursive Sources Tests && swiftlint",
     "test": "pnpm -s deps:patch && swift test",
-    "build": "pnpm -s deps:patch && mkdir -p bin && swift build -c release --product imsg && cp .build/release/imsg bin/imsg"
+    "build": "pnpm -s deps:patch && mkdir -p bin && swift build -c release --product imsg && cp .build/release/imsg bin/imsg && cp -R .build/release/imsg_imsg.bundle bin/imsg_imsg.bundle"
   }
 }

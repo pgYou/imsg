@@ -50,7 +50,8 @@ jobs:
         run: |
           mkdir -p dist
           cp .build/release/imsg dist/imsg
-          (cd dist && zip -r imsg-macos.zip imsg)
+          cp -R .build/release/imsg_imsg.bundle dist/imsg_imsg.bundle
+          (cd dist && zip -r imsg-macos.zip imsg imsg_imsg.bundle)
 
       - name: Publish release assets
         uses: softprops/action-gh-release@v2

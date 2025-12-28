@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.2.2 - 2025-12-28
+- fix: include SwiftPM resource bundle in release + build outputs
+
 ## 0.2.1 - 2025-12-28
 - fix: embed CLI version in resources for `--version` output
 - docs: release checklist now includes version file update
