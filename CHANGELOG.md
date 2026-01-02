@@ -5,6 +5,7 @@
 - fix: exclude reaction rows from history/watch output and tighten reaction matching
 - fix: reject reply_to_guid sends (AppleScript limitation)
 - fix: stabilize IMCore send initialization and handle resolution
+- feat: add IMCore reaction send support
 - test: add reply + reaction filtering coverage
 - feat: add send mode switch (applescript vs IMCore private API)
 - docs: add private API notes

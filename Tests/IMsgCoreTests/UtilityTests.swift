@@ -189,13 +189,47 @@ func messageSenderRejectsReplyTo() throws {
 }
 
 @Test
+func messageSenderRejectsReactionInAppleScript() throws {
+  let sender = MessageSender(runner: { _, _ in })
+  do {
+    try sender.send(
+      MessageSendOptions(
+        recipient: "+16502530000",
+        text: "",
+        attachmentPath: "",
+        service: .auto,
+        region: "US",
+        reactionToGUID: "msg-guid-1",
+        reactionType: .like,
+        reactionIsRemoval: false,
+        mode: .applescript
+      )
+    )
+    #expect(Bool(false))
+  } catch let error as IMsgError {
+    switch error {
+    case .reactionNotSupported:
+      #expect(Bool(true))
+    default:
+      #expect(Bool(false))
+    }
+  } catch {
+    #expect(Bool(false))
+  }
+}
+
+@Test
 func errorDescriptionsIncludeDetails() {
   let error = IMsgError.invalidService("weird")
   #expect(error.errorDescription?.contains("Invalid service: weird") == true)
   let chatError = IMsgError.invalidChatTarget("bad")
   #expect(chatError.errorDescription?.contains("Invalid chat target: bad") == true)
+  let reactionError = IMsgError.invalidReaction("nope")
+  #expect(reactionError.errorDescription?.contains("Invalid reaction: nope") == true)
   let replyError = IMsgError.replyToNotSupported("nope")
   #expect(replyError.errorDescription?.contains("Reply-to not supported: nope") == true)
+  let reactNotSupported = IMsgError.reactionNotSupported("nope")
+  #expect(reactNotSupported.errorDescription?.contains("Reaction not supported: nope") == true)
   let modeError = IMsgError.invalidSendMode("nope")
   #expect(modeError.errorDescription?.contains("Invalid send mode: nope") == true)
   let privateError = IMsgError.privateApiFailure("nope")

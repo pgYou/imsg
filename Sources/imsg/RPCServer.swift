@@ -195,7 +195,8 @@ final class RPCServer {
       output.sendError(id: id, error: err)
     } catch let err as IMsgError {
       switch err {
-      case .invalidService, .invalidSendMode, .invalidChatTarget, .replyToNotSupported:
+      case .invalidService, .invalidSendMode, .invalidChatTarget, .invalidReaction,
+        .replyToNotSupported, .reactionNotSupported:
         output.sendError(
           id: id,
           error: RPCError.invalidParams(err.errorDescription ?? "invalid params")
@@ -216,9 +217,6 @@ final class RPCServer {
   private func handleSend(params: [String: Any], id: Any?) throws {
     let text = stringParam(params["text"]) ?? ""
     let file = stringParam(params["file"]) ?? ""
-    if text.isEmpty && file.isEmpty {
-      throw RPCError.invalidParams("text or file is required")
-    }
     let serviceRaw = stringParam(params["service"]) ?? "auto"
     guard let service = MessageService(rawValue: serviceRaw) else {
       throw RPCError.invalidParams("invalid service")
@@ -229,6 +227,26 @@ final class RPCServer {
     let chatIdentifier = stringParam(params["chat_identifier"]) ?? ""
     let chatGUID = stringParam(params["chat_guid"]) ?? ""
     let replyToGUID = stringParam(params["reply_to_guid"]) ?? ""
+    let reactionToGUID = stringParam(params["reaction_to_guid"]) ?? ""
+    let reactionRaw = stringParam(params["reaction_type"]) ?? ""
+    let reactionRemove = boolParam(params["reaction_remove"]) ?? false
+    let reactionType = reactionRaw.isEmpty ? nil : ReactionType.parse(reactionRaw)
+    if !reactionRaw.isEmpty && reactionType == nil {
+      throw RPCError.invalidParams("invalid reaction_type")
+    }
+    let reactionRequested =
+      !reactionToGUID.isEmpty || reactionType != nil || reactionRemove
+    if reactionRequested {
+      if reactionType == nil {
+        throw RPCError.invalidParams("reaction_type is required")
+      }
+      if reactionToGUID.isEmpty {
+        throw RPCError.invalidParams("reaction_to_guid is required")
+      }
+      if !replyToGUID.isEmpty {
+        throw RPCError.invalidParams("reply_to_guid and reactions are mutually exclusive")
+      }
+    }
     let modeRaw = stringParam(params["send_mode"]) ?? ""
     let mode = modeRaw.isEmpty ? nil : MessageSendMode.parse(modeRaw)
     if !modeRaw.isEmpty && mode == nil {
@@ -241,6 +259,13 @@ final class RPCServer {
     }
     if !hasChatTarget && recipient.isEmpty {
       throw RPCError.invalidParams("to is required for direct sends")
+    }
+
+    if text.isEmpty && file.isEmpty && !reactionRequested {
+      throw RPCError.invalidParams("text or file is required")
+    }
+    if reactionRequested && !file.isEmpty {
+      throw RPCError.invalidParams("file is not allowed with reactions")
     }
 
     var resolvedChatIdentifier = chatIdentifier
@@ -266,6 +291,9 @@ final class RPCServer {
         chatIdentifier: resolvedChatIdentifier,
         chatGUID: resolvedChatGUID,
         replyToGUID: replyToGUID,
+        reactionToGUID: reactionToGUID,
+        reactionType: reactionType,
+        reactionIsRemoval: reactionRemove,
         mode: mode
       )
     )

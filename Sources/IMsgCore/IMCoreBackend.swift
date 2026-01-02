@@ -79,8 +79,11 @@ enum IMCoreBackend {
     let error: NSError? = nil
     let guid: NSString? = UUID().uuidString as NSString
     let subject: AnyObject? = nil
-    let associatedMessageGUID: NSString? = options.replyToGUID.isEmpty ? nil : options.replyToGUID as NSString
-    let associatedMessageType: Int64 = options.replyToGUID.isEmpty ? 0 : Int64(replyAssociatedMessageType)
+    let associatedMessageGUID = formattedAssociatedGUID(
+      reactionGUID: options.reactionToGUID,
+      replyGUID: options.replyToGUID
+    )
+    let associatedMessageType: Int64 = reactionAssociatedType(options: options)
     let associatedMessageRange = NSRange(location: 0, length: 0)
     let messageSummaryInfo: NSDictionary? = nil
     let threadIdentifier: NSString? = nil
@@ -112,7 +115,16 @@ enum IMCoreBackend {
       return nil
     }
 
-    message.setValue(options.text as NSString, forKey: "plainBody")
+    if !options.text.isEmpty {
+      message.setValue(options.text as NSString, forKey: "plainBody")
+    }
+    if let reactionType = options.reactionType,
+      reactionType.isCustom,
+      options.reactionIsRemoval == false,
+      message.responds(to: Selector(("_associatedMessageEmoji:")))
+    {
+      callVoid(message, Selector(("_associatedMessageEmoji:")), reactionType.emoji as NSString)
+    }
     return message
   }
 
@@ -143,6 +155,32 @@ enum IMCoreBackend {
     return callObject(cls, "sharedInstance")
       ?? callObject(cls, "sharedRegistry")
       ?? callObject(cls, "sharedRegistryIfAvailable")
+  }
+
+  private static func formattedAssociatedGUID(
+    reactionGUID: String,
+    replyGUID: String
+  ) -> NSString? {
+    let guid = reactionGUID.isEmpty ? replyGUID : reactionGUID
+    guard !guid.isEmpty else { return nil }
+    if guid.contains("/") {
+      return guid as NSString
+    }
+    return "p:0/\(guid)" as NSString
+  }
+
+  private static func reactionAssociatedType(options: MessageSendOptions) -> Int64 {
+    if let reactionType = options.reactionType {
+      let value =
+        options.reactionIsRemoval
+        ? reactionType.removalAssociatedMessageType
+        : reactionType.associatedMessageType
+      return Int64(value)
+    }
+    if options.replyToGUID.isEmpty {
+      return 0
+    }
+    return Int64(replyAssociatedMessageType)
   }
 
   private static func makeHandle(recipient: String) -> AnyObject? {
@@ -203,6 +241,15 @@ enum IMCoreBackend {
   private static func callVoid(
     _ target: AnyObject,
     _ selector: Selector,
+    _ value: AnyObject
+  ) {
+    guard let fn: ObjcMsgSendVoidObj = msgSend(ObjcMsgSendVoidObj.self) else { return }
+    fn(target, selector, value)
+  }
+
+  private static func callVoid(
+    _ target: AnyObject,
+    _ selector: Selector,
     _ message: AnyObject,
     _ account: AnyObject?,
     _ adjustingSender: Bool,
@@ -221,6 +268,7 @@ enum IMCoreBackend {
 private typealias ObjcMsgSendId = @convention(c) (AnyObject, Selector) -> AnyObject?
 private typealias ObjcMsgSendIdObj = @convention(c) (AnyObject, Selector, AnyObject?) -> AnyObject?
 private typealias ObjcMsgSendVoid = @convention(c) (AnyObject, Selector, AnyObject, Bool, Bool) -> Void
+private typealias ObjcMsgSendVoidObj = @convention(c) (AnyObject, Selector, AnyObject) -> Void
 private typealias ObjcMsgSendVoidAccount =
   @convention(c) (AnyObject, Selector, AnyObject, AnyObject?, Bool, Bool) -> Void
 private typealias ObjcMsgSendInitHandle =

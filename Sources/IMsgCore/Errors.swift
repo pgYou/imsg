@@ -6,7 +6,9 @@ public enum IMsgError: LocalizedError, Sendable {
   case invalidService(String)
   case invalidSendMode(String)
   case invalidChatTarget(String)
+  case invalidReaction(String)
   case replyToNotSupported(String)
+  case reactionNotSupported(String)
   case privateApiFailure(String)
   case appleScriptFailure(String)
 
@@ -37,8 +39,12 @@ public enum IMsgError: LocalizedError, Sendable {
       return "Invalid send mode: \(value)"
     case .invalidChatTarget(let value):
       return "Invalid chat target: \(value)"
+    case .invalidReaction(let value):
+      return "Invalid reaction: \(value)"
     case .replyToNotSupported(let value):
       return "Reply-to not supported: \(value)"
+    case .reactionNotSupported(let value):
+      return "Reaction not supported: \(value)"
     case .privateApiFailure(let value):
       return "Private API failure: \(value)"
     case .appleScriptFailure(let message):

@@ -29,6 +29,7 @@ pnpm build
 - `imsg watch [--chat-id <id>] [--since-rowid <n>] [--debounce 250ms] [--attachments] [--participants …] [--start …] [--end …] [--json]`
 - `imsg send --to <handle> [--text "hi"] [--file /path/img.jpg] [--service imessage|sms|auto] [--region US]`
 - `imsg send --to <handle> [--text "hi"] [--file /path/img.jpg] [--mode applescript|imcore|auto]`
+- `imsg send --to <handle> --reaction <type|emoji> --reaction-to-guid <guid> [--reaction-remove] --mode imcore`
 
 ### Quick samples
 ```
@@ -52,6 +53,9 @@ imsg send --to "+14155551212" --text "hi" --file ~/Desktop/pic.jpg --service ime
 
 # experimental: private IMCore send (reply support)
 IMSG_ALLOW_PRIVATE=1 imsg send --mode imcore --reply-to-guid <guid> --text "reply"
+
+# experimental: private IMCore reactions
+IMSG_ALLOW_PRIVATE=1 imsg send --mode imcore --reaction like --reaction-to-guid <guid>
 ```
 
 ## Attachment notes
@@ -67,6 +71,7 @@ IMSG_ALLOW_PRIVATE=1 imsg send --mode imcore --reply-to-guid <guid> --text "repl
 `imsg history --json` and `imsg watch --json` emit one JSON object per message with fields: `id`, `chat_id`, `guid`, `reply_to_guid`, `sender`, `is_from_me`, `text`, `created_at`, `attachments` (array of metadata with `filename`, `transfer_name`, `uti`, `mime_type`, `total_bytes`, `is_sticker`, `original_path`, `missing`), `reactions`.
 
 Note: `reply_to_guid` is read-only metadata unless you use `--mode imcore` (private API).
+Reactions can only be sent via `--mode imcore` (private API).
 
 ## Permissions troubleshooting
 If you see “unable to open database file” or empty output:

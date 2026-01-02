@@ -186,6 +186,34 @@ func sendCommandRejectsReplyToGuid() async {
 }
 
 @Test
+func sendCommandRejectsReactionInAppleScript() async {
+  let values = ParsedValues(
+    positional: [],
+    options: [
+      "to": ["+15551234567"],
+      "reaction": ["like"],
+      "reactionToGUID": ["msg-guid-1"],
+      "mode": ["applescript"],
+    ],
+    flags: []
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+  do {
+    try await SendCommand.spec.run(values, runtime)
+    #expect(Bool(false))
+  } catch let error as IMsgError {
+    switch error {
+    case .reactionNotSupported:
+      #expect(Bool(true))
+    default:
+      #expect(Bool(false))
+    }
+  } catch {
+    #expect(Bool(false))
+  }
+}
+
+@Test
 func sendCommandParsesMode() async throws {
   let values = ParsedValues(
     positional: [],
@@ -202,6 +230,31 @@ func sendCommandParsesMode() async throws {
     }
   )
   #expect(captured?.mode == .imcore)
+}
+
+@Test
+func sendCommandParsesReaction() async throws {
+  let values = ParsedValues(
+    positional: [],
+    options: [
+      "to": ["+15551234567"],
+      "reaction": ["love"],
+      "reactionToGUID": ["msg-guid-1"],
+      "mode": ["imcore"],
+    ],
+    flags: []
+  )
+  let runtime = RuntimeOptions(parsedValues: values)
+  var captured: MessageSendOptions?
+  try await SendCommand.run(
+    values: values,
+    runtime: runtime,
+    sendMessage: { options in
+      captured = options
+    }
+  )
+  #expect(captured?.reactionType == .love)
+  #expect(captured?.reactionToGUID == "msg-guid-1")
 }
 
 @Test

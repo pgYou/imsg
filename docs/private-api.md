@@ -11,6 +11,8 @@ Examples:
 ```
 IMSG_ALLOW_PRIVATE=1 imsg send --mode imcore --text "hi" --to "+14155551212"
 IMSG_ALLOW_PRIVATE=1 imsg send --mode imcore --reply-to-guid <guid> --text "reply"
+IMSG_ALLOW_PRIVATE=1 imsg send --mode imcore --reaction like --reaction-to-guid <guid>
+IMSG_ALLOW_PRIVATE=1 imsg send --mode imcore --reaction 😂 --reaction-to-guid <guid> --reaction-remove
 ```
 
 RPC:
@@ -21,12 +23,14 @@ RPC:
 ## Capabilities
 - Text send to a handle or chat identifier/guid.
 - Reply support via `reply_to_guid` (best effort).
+- Reaction send via `reaction` + `reaction_to_guid` (best effort).
 - Attachments are **not** supported in IMCore mode (throws error).
 
 ## How it works (current best guess)
 - Loads private frameworks at runtime via `dlopen`.
 - Resolves an `IMChat` via `IMChatRegistry.sharedInstance`.
 - Builds an `IMMessage` with `associatedMessageGUID` for replies.
+- Builds an `IMMessage` with `associatedMessageType` for tapbacks.
 - Sends via `_sendMessage:adjustingSender:shouldQueue:`.
 
 ## Limitations

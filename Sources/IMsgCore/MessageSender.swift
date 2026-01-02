@@ -17,6 +17,9 @@ public struct MessageSendOptions: Sendable {
   public var chatIdentifier: String
   public var chatGUID: String
   public var replyToGUID: String
+  public var reactionToGUID: String
+  public var reactionType: ReactionType?
+  public var reactionIsRemoval: Bool
   public var mode: MessageSendMode?
 
   public init(
@@ -28,6 +31,9 @@ public struct MessageSendOptions: Sendable {
     chatIdentifier: String = "",
     chatGUID: String = "",
     replyToGUID: String = "",
+    reactionToGUID: String = "",
+    reactionType: ReactionType? = nil,
+    reactionIsRemoval: Bool = false,
     mode: MessageSendMode? = nil
   ) {
     self.recipient = recipient
@@ -38,6 +44,9 @@ public struct MessageSendOptions: Sendable {
     self.chatIdentifier = chatIdentifier
     self.chatGUID = chatGUID
     self.replyToGUID = replyToGUID
+    self.reactionToGUID = reactionToGUID
+    self.reactionType = reactionType
+    self.reactionIsRemoval = reactionIsRemoval
     self.mode = mode
   }
 }
@@ -60,6 +69,19 @@ public struct MessageSender {
     var resolved = options
     let chatTarget = resolved.chatIdentifier.isEmpty ? resolved.chatGUID : resolved.chatIdentifier
     let useChat = !chatTarget.isEmpty
+    let isReactionSend =
+      !resolved.reactionToGUID.isEmpty || resolved.reactionType != nil || resolved.reactionIsRemoval
+    if isReactionSend {
+      if resolved.reactionToGUID.isEmpty {
+        throw IMsgError.invalidReaction("Missing reaction_to_guid")
+      }
+      guard resolved.reactionType != nil else {
+        throw IMsgError.invalidReaction("Missing reaction type")
+      }
+      if !resolved.replyToGUID.isEmpty {
+        throw IMsgError.invalidReaction("Reply and reaction are mutually exclusive")
+      }
+    }
     if useChat == false {
       if resolved.region.isEmpty { resolved.region = "US" }
       resolved.recipient = normalizer.normalize(resolved.recipient, region: resolved.region)
@@ -71,6 +93,9 @@ public struct MessageSender {
     let mode = try resolveMode(explicit: resolved.mode)
     switch mode {
     case .applescript:
+      if isReactionSend {
+        throw IMsgError.reactionNotSupported("Messages AppleScript does not support reactions.")
+      }
       try sendViaAppleScript(resolved, chatTarget: chatTarget, useChat: useChat)
     case .imcore:
       try IMCoreBackend.send(resolved)
@@ -78,7 +103,7 @@ public struct MessageSender {
       do {
         try IMCoreBackend.send(resolved)
       } catch {
-        if !resolved.replyToGUID.isEmpty {
+        if !resolved.replyToGUID.isEmpty || isReactionSend {
           throw error
         }
         try sendViaAppleScript(resolved, chatTarget: chatTarget, useChat: useChat)
@@ -93,6 +118,9 @@ public struct MessageSender {
   ) throws {
     if !resolved.replyToGUID.isEmpty {
       throw IMsgError.replyToNotSupported("Messages AppleScript does not support reply-to.")
+    }
+    if !resolved.reactionToGUID.isEmpty || resolved.reactionType != nil || resolved.reactionIsRemoval {
+      throw IMsgError.reactionNotSupported("Messages AppleScript does not support reactions.")
     }
     let script = appleScript()
     let arguments = [

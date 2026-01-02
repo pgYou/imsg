@@ -75,9 +75,78 @@ public enum ReactionType: Sendable, Equatable, Hashable {
     }
   }
 
+  /// Associated message type for adding this reaction (2000-2006).
+  public var associatedMessageType: Int {
+    switch self {
+    case .love: return 2000
+    case .like: return 2001
+    case .dislike: return 2002
+    case .laugh: return 2003
+    case .emphasis: return 2004
+    case .question: return 2005
+    case .custom: return 2006
+    }
+  }
+
+  /// Associated message type for removing this reaction (3000-3006).
+  public var removalAssociatedMessageType: Int {
+    return associatedMessageType + 1000
+  }
+
   public var isCustom: Bool {
     if case .custom = self {
       return true
+    }
+    return false
+  }
+
+  public static func parse(_ value: String) -> ReactionType? {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    let lower = trimmed.lowercased()
+    switch lower {
+    case "love", "heart":
+      return .love
+    case "like", "thumbsup", "thumbs-up":
+      return .like
+    case "dislike", "thumbsdown", "thumbs-down":
+      return .dislike
+    case "laugh", "haha", "lol":
+      return .laugh
+    case "emphasis", "emphasize", "exclaim", "exclamation":
+      return .emphasis
+    case "question", "questionmark", "question-mark":
+      return .question
+    default:
+      break
+    }
+    switch trimmed {
+    case "❤️", "❤":
+      return .love
+    case "👍":
+      return .like
+    case "👎":
+      return .dislike
+    case "😂":
+      return .laugh
+    case "‼️", "‼":
+      return .emphasis
+    case "❓", "?":
+      return .question
+    default:
+      break
+    }
+    if containsEmoji(trimmed) {
+      return .custom(trimmed)
+    }
+    return nil
+  }
+
+  private static func containsEmoji(_ value: String) -> Bool {
+    for scalar in value.unicodeScalars {
+      if scalar.properties.isEmojiPresentation || scalar.properties.isEmoji {
+        return true
+      }
     }
     return false
   }
