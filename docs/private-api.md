@@ -35,10 +35,12 @@ RPC:
 
 ## Limitations
 - Requires macOS private frameworks available and unchanged.
+- Requires IMDaemon connectivity; without entitlements this mode will fail early.
 - May require system permissions/entitlements that are not granted.
 - Failures are surfaced as `Private API failure: ...`.
 
 ## Debug tips
 - Run with `IMSG_SEND_MODE=imcore` to force mode.
 - Use `IMSG_ALLOW_PRIVATE=1` or it will refuse to send.
+- If you see an IMDaemon connection error, use AppleScript mode or run a signed helper with the right entitlements.
 - Inspect console logs for IMDaemon / Messages errors.

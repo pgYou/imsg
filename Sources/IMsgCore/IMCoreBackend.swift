@@ -18,6 +18,7 @@ enum IMCoreBackend {
       throw IMsgError.privateApiFailure("IMCore send does not support attachments yet.")
     }
     try loadFrameworks()
+    try ensureDaemonConnected()
     guard let registry = chatRegistry() else {
       throw IMsgError.privateApiFailure("Unable to load IMChatRegistry.")
     }
@@ -25,9 +26,9 @@ enum IMCoreBackend {
     let chat: AnyObject?
     let chatTarget = options.chatIdentifier.isEmpty ? options.chatGUID : options.chatIdentifier
     if !chatTarget.isEmpty {
-      chat = callObject(registry, "existingChatWithIdentifier:", chatTarget as NSString)
+      chat = callObject(registry, "existingChatWithChatIdentifier:", chatTarget as NSString)
         ?? callObject(registry, "existingChatWithGUID:", chatTarget as NSString)
-        ?? callObject(registry, "chatWithHandle:", chatTarget as NSString)
+        ?? callObject(registry, "existingChatWithIdentifier:", chatTarget as NSString)
     } else {
       guard let handle = makeHandle(recipient: options.recipient) else {
         throw IMsgError.privateApiFailure("Unable to resolve IMHandle for recipient.")
@@ -43,15 +44,43 @@ enum IMCoreBackend {
       throw IMsgError.privateApiFailure("Unable to construct IMMessage.")
     }
 
-    let sendSel = Selector(("_sendMessage:adjustingSender:shouldQueue:"))
+    let refreshSel = Selector(("refreshServiceForSending"))
+    if chat.responds(to: refreshSel) {
+      callVoid(chat, refreshSel)
+    }
+
+    let sendSel = Selector(("sendMessage:"))
     if chat.responds(to: sendSel) {
-      callVoid(chat, sendSel, message, true, true)
+      callVoid(chat, sendSel, message)
+      return
+    }
+
+    let sendAccountSel = Selector(("sendMessage:onAccount:"))
+    if chat.responds(to: sendAccountSel) {
+      let account = callObject(chat, "account") ?? iMessageAccount()
+      callVoid(chat, sendAccountSel, message, account)
+      return
+    }
+
+    let sendServiceSel = Selector(("sendMessage:onService:"))
+    if chat.responds(to: sendServiceSel) {
+      var service: AnyObject?
+      if let serviceClass = NSClassFromString("IMService") as AnyObject? {
+        service = callObject(serviceClass, "iMessageService")
+      }
+      callVoid(chat, sendServiceSel, message, service)
+      return
+    }
+
+    let legacySel = Selector(("_sendMessage:adjustingSender:shouldQueue:"))
+    if chat.responds(to: legacySel) {
+      callVoid(chat, legacySel, message, true, true)
       return
     }
 
     let fallbackSel = Selector(("_sendMessage:withAccount:adjustingSender:shouldQueue:"))
     if chat.responds(to: fallbackSel) {
-      let account = callObject(chat, "account")
+      let account = callObject(chat, "account") ?? iMessageAccount()
       callVoid(chat, fallbackSel, message, account, true, true)
       return
     }
@@ -72,6 +101,7 @@ enum IMCoreBackend {
           "associatedMessageGUID:associatedMessageType:associatedMessageRange:messageSummaryInfo:threadIdentifier:"
       )
     )
+    let sender = loginHandle()
     let time = NSDate()
     let text = NSAttributedString(string: options.text)
     let messageSubject: NSAttributedString? = nil
@@ -95,7 +125,7 @@ enum IMCoreBackend {
     if let created = initFn(
       message,
       sel,
-      nil,
+      sender,
       time,
       text,
       messageSubject,
@@ -150,6 +180,55 @@ enum IMCoreBackend {
     }
   }
 
+  private static func ensureDaemonConnected() throws {
+    guard let controllerClass = NSClassFromString("IMDaemonController") as AnyObject? else { return }
+    guard let controller = callObject(controllerClass, "sharedInstance") else { return }
+    if callBool(controller, Selector(("isConnected"))) {
+      return
+    }
+
+    let persistenceSel = Selector(("setupIMDPersistenceTrampoline"))
+    if controller.responds(to: persistenceSel) {
+      callVoid(controller, persistenceSel)
+    }
+    let requestSel = Selector(("requestSetup"))
+    if controller.responds(to: requestSel) {
+      callVoid(controller, requestSel)
+    }
+    let processCapsSel = Selector(("setProcessCapabilities:"))
+    if controller.responds(to: processCapsSel) {
+      callVoid(controller, processCapsSel, UInt64.max)
+    }
+
+    var attempted = false
+    let connectCapsSel = Selector(("connectToDaemonWithLaunch:capabilities:blockUntilConnected:"))
+    if controller.responds(to: connectCapsSel) {
+      _ = callBool(controller, connectCapsSel, true, UInt32.max, true)
+      attempted = true
+    }
+    let connectLaunchSel = Selector(("connectToDaemonWithLaunch:"))
+    if !attempted && controller.responds(to: connectLaunchSel) {
+      _ = callBool(controller, connectLaunchSel, true)
+      attempted = true
+    }
+    let connectSel = Selector(("connectToDaemon"))
+    if !attempted && controller.responds(to: connectSel) {
+      _ = callBool(controller, connectSel)
+      attempted = true
+    }
+
+    let blockSel = Selector(("blockUntilConnected"))
+    if controller.responds(to: blockSel) {
+      callVoid(controller, blockSel)
+    }
+
+    if attempted && !callBool(controller, Selector(("isConnected"))) {
+      throw IMsgError.privateApiFailure(
+        "IMDaemon connection unavailable. IMCore likely requires entitlements; use AppleScript mode or a signed helper."
+      )
+    }
+  }
+
   private static func chatRegistry() -> AnyObject? {
     guard let cls = NSClassFromString("IMChatRegistry") as AnyObject? else { return nil }
     return callObject(cls, "sharedInstance")
@@ -183,7 +262,7 @@ enum IMCoreBackend {
     return Int64(replyAssociatedMessageType)
   }
 
-  private static func makeHandle(recipient: String) -> AnyObject? {
+  private static func makeHandle(recipient: String, account: AnyObject? = nil) -> AnyObject? {
     guard let handleClass = NSClassFromString("IMHandle") as AnyObject? else { return nil }
     guard let allocFn: ObjcMsgSendId = msgSend(ObjcMsgSendId.self) else { return nil }
     guard let allocated = allocFn(handleClass, Selector(("alloc"))) else { return nil }
@@ -192,8 +271,8 @@ enum IMCoreBackend {
     guard let initFn: ObjcMsgSendInitHandle = msgSend(ObjcMsgSendInitHandle.self) else {
       return nil
     }
-    let account = iMessageAccount()
-    return initFn(allocated, selector, account, recipient as NSString, false)
+    let resolved = account ?? iMessageAccount()
+    return initFn(allocated, selector, resolved, recipient as NSString, false)
   }
 
   private static func iMessageAccount() -> AnyObject? {
@@ -216,15 +295,66 @@ enum IMCoreBackend {
     return callObject(controller, "activeIMessageAccount")
   }
 
+  private static func loginHandle() -> AnyObject? {
+    guard let account = iMessageAccount() else { return nil }
+    if let handle = callObject(account, "loginIMHandle") {
+      return handle
+    }
+    if let loginID = callObject(account, "loginID") as? NSString {
+      return makeHandle(recipient: loginID as String, account: account)
+    }
+    return nil
+  }
+
+  private static func callObject(
+    _ target: AnyObject,
+    _ selectorName: String
+  ) -> AnyObject? {
+    let selector = Selector(selectorName)
+    guard target.responds(to: selector) else { return nil }
+    guard let fn: ObjcMsgSendId = msgSend(ObjcMsgSendId.self) else { return nil }
+    return fn(target, selector)
+  }
+
   private static func callObject(
     _ target: AnyObject,
     _ selectorName: String,
-    _ arg: AnyObject? = nil
+    _ arg: AnyObject?
   ) -> AnyObject? {
     let selector = Selector(selectorName)
     guard target.responds(to: selector) else { return nil }
     guard let fn: ObjcMsgSendIdObj = msgSend(ObjcMsgSendIdObj.self) else { return nil }
     return fn(target, selector, arg)
+  }
+
+  private static func callBool(
+    _ target: AnyObject,
+    _ selector: Selector
+  ) -> Bool {
+    guard let fn: ObjcMsgSendBool = msgSend(ObjcMsgSendBool.self) else { return false }
+    return fn(target, selector)
+  }
+
+  private static func callBool(
+    _ target: AnyObject,
+    _ selector: Selector,
+    _ value: Bool
+  ) -> Bool {
+    guard let fn: ObjcMsgSendBoolBool = msgSend(ObjcMsgSendBoolBool.self) else { return false }
+    return fn(target, selector, value)
+  }
+
+  private static func callBool(
+    _ target: AnyObject,
+    _ selector: Selector,
+    _ value: Bool,
+    _ capabilities: UInt32,
+    _ blockUntilConnected: Bool
+  ) -> Bool {
+    guard let fn: ObjcMsgSendBoolBoolUIntBool = msgSend(ObjcMsgSendBoolBoolUIntBool.self) else {
+      return false
+    }
+    return fn(target, selector, value, capabilities, blockUntilConnected)
   }
 
   private static func callVoid(
@@ -240,11 +370,38 @@ enum IMCoreBackend {
 
   private static func callVoid(
     _ target: AnyObject,
+    _ selector: Selector
+  ) {
+    guard let fn: ObjcMsgSendVoidNoArgs = msgSend(ObjcMsgSendVoidNoArgs.self) else { return }
+    fn(target, selector)
+  }
+
+  private static func callVoid(
+    _ target: AnyObject,
     _ selector: Selector,
     _ value: AnyObject
   ) {
     guard let fn: ObjcMsgSendVoidObj = msgSend(ObjcMsgSendVoidObj.self) else { return }
     fn(target, selector, value)
+  }
+
+  private static func callVoid(
+    _ target: AnyObject,
+    _ selector: Selector,
+    _ value: UInt64
+  ) {
+    guard let fn: ObjcMsgSendVoidUInt64 = msgSend(ObjcMsgSendVoidUInt64.self) else { return }
+    fn(target, selector, value)
+  }
+
+  private static func callVoid(
+    _ target: AnyObject,
+    _ selector: Selector,
+    _ message: AnyObject,
+    _ value: AnyObject?
+  ) {
+    guard let fn: ObjcMsgSendVoidObjObj = msgSend(ObjcMsgSendVoidObjObj.self) else { return }
+    fn(target, selector, message, value)
   }
 
   private static func callVoid(
@@ -268,7 +425,15 @@ enum IMCoreBackend {
 private typealias ObjcMsgSendId = @convention(c) (AnyObject, Selector) -> AnyObject?
 private typealias ObjcMsgSendIdObj = @convention(c) (AnyObject, Selector, AnyObject?) -> AnyObject?
 private typealias ObjcMsgSendVoid = @convention(c) (AnyObject, Selector, AnyObject, Bool, Bool) -> Void
+private typealias ObjcMsgSendVoidNoArgs = @convention(c) (AnyObject, Selector) -> Void
 private typealias ObjcMsgSendVoidObj = @convention(c) (AnyObject, Selector, AnyObject) -> Void
+private typealias ObjcMsgSendVoidUInt64 = @convention(c) (AnyObject, Selector, UInt64) -> Void
+private typealias ObjcMsgSendVoidObjObj =
+  @convention(c) (AnyObject, Selector, AnyObject, AnyObject?) -> Void
+private typealias ObjcMsgSendBool = @convention(c) (AnyObject, Selector) -> Bool
+private typealias ObjcMsgSendBoolBool = @convention(c) (AnyObject, Selector, Bool) -> Bool
+private typealias ObjcMsgSendBoolBoolUIntBool =
+  @convention(c) (AnyObject, Selector, Bool, UInt32, Bool) -> Bool
 private typealias ObjcMsgSendVoidAccount =
   @convention(c) (AnyObject, Selector, AnyObject, AnyObject?, Bool, Bool) -> Void
 private typealias ObjcMsgSendInitHandle =

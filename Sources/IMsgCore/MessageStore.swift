@@ -16,6 +16,7 @@ public final class MessageStore: @unchecked Sendable {
   private let queueKey = DispatchSpecificKey<Void>()
   private let hasAttributedBody: Bool
   private let hasReactionColumns: Bool
+  private let hasDestinationCallerID: Bool
 
   public init(path: String = MessageStore.defaultPath) throws {
     let normalized = NSString(string: path).expandingTildeInPath
@@ -29,6 +30,7 @@ public final class MessageStore: @unchecked Sendable {
       self.connection.busyTimeout = 5
       self.hasAttributedBody = MessageStore.detectAttributedBody(connection: self.connection)
       self.hasReactionColumns = MessageStore.detectReactionColumns(connection: self.connection)
+      self.hasDestinationCallerID = MessageStore.detectDestinationCallerID(connection: self.connection)
     } catch {
       throw MessageStore.enhance(error: error, path: normalized)
     }
@@ -38,7 +40,8 @@ public final class MessageStore: @unchecked Sendable {
     connection: Connection,
     path: String,
     hasAttributedBody: Bool? = nil,
-    hasReactionColumns: Bool? = nil
+    hasReactionColumns: Bool? = nil,
+    hasDestinationCallerID: Bool? = nil
   ) throws {
     self.path = path
     self.queue = DispatchQueue(label: "imsg.db.test", qos: .userInitiated)
@@ -54,6 +57,11 @@ public final class MessageStore: @unchecked Sendable {
       self.hasReactionColumns = hasReactionColumns
     } else {
       self.hasReactionColumns = MessageStore.detectReactionColumns(connection: connection)
+    }
+    if let hasDestinationCallerID {
+      self.hasDestinationCallerID = hasDestinationCallerID
+    } else {
+      self.hasDestinationCallerID = MessageStore.detectDestinationCallerID(connection: connection)
     }
   }
 
@@ -138,12 +146,14 @@ public final class MessageStore: @unchecked Sendable {
     let guidColumn = hasReactionColumns ? "m.guid" : "NULL"
     let associatedGuidColumn = hasReactionColumns ? "m.associated_message_guid" : "NULL"
     let associatedTypeColumn = hasReactionColumns ? "m.associated_message_type" : "NULL"
+    let destinationCallerColumn = hasDestinationCallerID ? "m.destination_caller_id" : "NULL"
     let reactionFilter =
       hasReactionColumns
       ? " AND (m.associated_message_type IS NULL OR m.associated_message_type < 2000 OR m.associated_message_type > 3006)"
       : ""
     let sql = """
       SELECT m.ROWID, m.handle_id, h.id, IFNULL(m.text, '') AS text, m.date, m.is_from_me, m.service,
+             \(destinationCallerColumn) AS destination_caller_id,
              \(guidColumn) AS guid, \(associatedGuidColumn) AS associated_guid, \(associatedTypeColumn) AS associated_type,
              (SELECT COUNT(*) FROM message_attachment_join maj WHERE maj.message_id = m.ROWID) AS attachments,
              \(bodyColumn) AS body
@@ -159,16 +169,20 @@ public final class MessageStore: @unchecked Sendable {
       for row in try db.prepare(sql, chatID, limit) {
         let rowID = int64Value(row[0]) ?? 0
         let handleID = int64Value(row[1])
-        let sender = stringValue(row[2])
+        var sender = stringValue(row[2])
         let text = stringValue(row[3])
         let date = appleDate(from: int64Value(row[4]))
         let isFromMe = boolValue(row[5])
         let service = stringValue(row[6])
-        let guid = stringValue(row[7])
-        let associatedGuid = stringValue(row[8])
-        let associatedType = intValue(row[9])
-        let attachments = intValue(row[10]) ?? 0
-        let body = dataValue(row[11])
+        let destinationCallerID = stringValue(row[7])
+        if sender.isEmpty && !destinationCallerID.isEmpty {
+          sender = destinationCallerID
+        }
+        let guid = stringValue(row[8])
+        let associatedGuid = stringValue(row[9])
+        let associatedType = intValue(row[10])
+        let attachments = intValue(row[11]) ?? 0
+        let body = dataValue(row[12])
         let resolvedText = text.isEmpty ? TypedStreamParser.parseAttributedBody(body) : text
         let replyToGUID = replyToGUID(associatedGuid: associatedGuid, associatedType: associatedType)
         messages.append(
@@ -195,12 +209,14 @@ public final class MessageStore: @unchecked Sendable {
     let guidColumn = hasReactionColumns ? "m.guid" : "NULL"
     let associatedGuidColumn = hasReactionColumns ? "m.associated_message_guid" : "NULL"
     let associatedTypeColumn = hasReactionColumns ? "m.associated_message_type" : "NULL"
+    let destinationCallerColumn = hasDestinationCallerID ? "m.destination_caller_id" : "NULL"
     let reactionFilter =
       hasReactionColumns
       ? " AND (m.associated_message_type IS NULL OR m.associated_message_type < 2000 OR m.associated_message_type > 3006)"
       : ""
     var sql = """
       SELECT m.ROWID, cmj.chat_id, m.handle_id, h.id, IFNULL(m.text, '') AS text, m.date, m.is_from_me, m.service,
+             \(destinationCallerColumn) AS destination_caller_id,
              \(guidColumn) AS guid, \(associatedGuidColumn) AS associated_guid, \(associatedTypeColumn) AS associated_type,
              (SELECT COUNT(*) FROM message_attachment_join maj WHERE maj.message_id = m.ROWID) AS attachments,
              \(bodyColumn) AS body
@@ -223,16 +239,20 @@ public final class MessageStore: @unchecked Sendable {
         let rowID = int64Value(row[0]) ?? 0
         let resolvedChatID = int64Value(row[1]) ?? chatID ?? 0
         let handleID = int64Value(row[2])
-        let sender = stringValue(row[3])
+        var sender = stringValue(row[3])
         let text = stringValue(row[4])
         let date = appleDate(from: int64Value(row[5]))
         let isFromMe = boolValue(row[6])
         let service = stringValue(row[7])
-        let guid = stringValue(row[8])
-        let associatedGuid = stringValue(row[9])
-        let associatedType = intValue(row[10])
-        let attachments = intValue(row[11]) ?? 0
-        let body = dataValue(row[12])
+        let destinationCallerID = stringValue(row[8])
+        if sender.isEmpty && !destinationCallerID.isEmpty {
+          sender = destinationCallerID
+        }
+        let guid = stringValue(row[9])
+        let associatedGuid = stringValue(row[10])
+        let associatedType = intValue(row[11])
+        let attachments = intValue(row[12]) ?? 0
+        let body = dataValue(row[13])
         let resolvedText = text.isEmpty ? TypedStreamParser.parseAttributedBody(body) : text
         let replyToGUID = replyToGUID(associatedGuid: associatedGuid, associatedType: associatedType)
         messages.append(

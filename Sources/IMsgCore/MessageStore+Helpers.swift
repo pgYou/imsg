@@ -18,6 +18,22 @@ extension MessageStore {
     return false
   }
 
+  static func detectDestinationCallerID(connection: Connection) -> Bool {
+    do {
+      let rows = try connection.prepare("PRAGMA table_info(message)")
+      for row in rows {
+        if let name = row[1] as? String,
+          name.caseInsensitiveCompare("destination_caller_id") == .orderedSame
+        {
+          return true
+        }
+      }
+    } catch {
+      return false
+    }
+    return false
+  }
+
   static func enhance(error: Error, path: String) -> Error {
     let message = String(describing: error).lowercased()
     if message.contains("out of memory (14)") || message.contains("authorization denied")
