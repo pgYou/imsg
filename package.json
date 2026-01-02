@@ -1,6 +1,6 @@
 {
   "name": "imsg",
-  "version": "0.2.1",
+  "version": "0.3.1",
   "private": true,
   "scripts": {
     "version:sync": "scripts/generate-version.sh",
