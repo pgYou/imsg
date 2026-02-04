@@ -35,7 +35,8 @@ imsg:
 	swift package resolve
 	scripts/patch-deps.sh
 	swift package clean
-	swift build -c debug --product imsg
+	swift build -c debug --product imsg \
+		-Xswiftc -target -Xswiftc x86_64-apple-macos12.0
 	./.build/debug/imsg $(ARGS)
 
 clean:

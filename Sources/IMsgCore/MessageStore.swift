@@ -1,7 +1,7 @@
 import Foundation
 import SQLite
 
-public final class MessageStore: @unchecked Sendable {
+public final class MessageStore {
   public static let appleEpochOffset: TimeInterval = 978_307_200
 
   public static var defaultPath: String {

@@ -1,7 +1,7 @@
-import Commander
+import Combine
 import Foundation
 import SQLite
-import Testing
+import XCTest
 
 @testable import IMsgCore
 @testable import imsg
@@ -91,239 +91,235 @@ private enum CommandTestDatabase {
   }
 }
 
-@Test
-func chatsCommandRunsWithJsonOutput() async throws {
-  let path = try CommandTestDatabase.makePath()
-  let values = ParsedValues(
-    positional: [],
-    options: ["db": [path], "limit": ["5"]],
-    flags: ["jsonOutput"]
-  )
-  let runtime = RuntimeOptions(parsedValues: values)
-  try await ChatsCommand.spec.run(values, runtime)
-}
-
-@Test
-func historyCommandRunsWithChatID() async throws {
-  let path = try CommandTestDatabase.makePath()
-  let values = ParsedValues(
-    positional: [],
-    options: ["db": [path], "chatID": ["1"], "limit": ["5"]],
-    flags: ["jsonOutput"]
-  )
-  let runtime = RuntimeOptions(parsedValues: values)
-  try await HistoryCommand.spec.run(values, runtime)
-}
-
-@Test
-func historyCommandRunsWithAttachmentsNonJson() async throws {
-  let path = try CommandTestDatabase.makePathWithAttachment()
-  let values = ParsedValues(
-    positional: [],
-    options: ["db": [path], "chatID": ["1"], "limit": ["5"]],
-    flags: ["attachments"]
-  )
-  let runtime = RuntimeOptions(parsedValues: values)
-  try await HistoryCommand.spec.run(values, runtime)
-}
-
-@Test
-func chatsCommandRunsWithPlainOutput() async throws {
-  let path = try CommandTestDatabase.makePath()
-  let values = ParsedValues(
-    positional: [],
-    options: ["db": [path], "limit": ["5"]],
-    flags: []
-  )
-  let runtime = RuntimeOptions(parsedValues: values)
-  try await ChatsCommand.spec.run(values, runtime)
-}
-
-@Test
-func sendCommandRejectsMissingRecipient() async {
-  let values = ParsedValues(
-    positional: [],
-    options: ["text": ["hi"]],
-    flags: []
-  )
-  let runtime = RuntimeOptions(parsedValues: values)
-  do {
-    try await SendCommand.spec.run(values, runtime)
-    #expect(Bool(false))
-  } catch let error as ParsedValuesError {
-    #expect(error.description.contains("Missing required option"))
-  } catch {
-    #expect(Bool(false))
+final class CommandTests: XCTestCase {
+  func testChatsCommandRunsWithJsonOutput() async throws {
+    let path = try CommandTestDatabase.makePath()
+    let values = ParsedValues(
+      options: ["db": [path], "limit": ["5"]],
+      flags: ["jsonOutput"],
+      positional: []
+    )
+    let runtime = RuntimeOptions(parsedValues: values)
+    try await ChatsCommand.spec.run(values, runtime)
   }
-}
 
-@Test
-func sendCommandRunsWithStubSender() async throws {
-  let values = ParsedValues(
-    positional: [],
-    options: ["to": ["+15551234567"], "text": ["hi"]],
-    flags: []
-  )
-  let runtime = RuntimeOptions(parsedValues: values)
-  var captured: MessageSendOptions?
-  try await SendCommand.run(
-    values: values, runtime: runtime,
-    sendMessage: { options in
-      captured = options
-    })
-  #expect(captured?.recipient == "+15551234567")
-  #expect(captured?.text == "hi")
-}
-
-@Test
-func sendCommandResolvesChatID() async throws {
-  let path = try CommandTestDatabase.makePath()
-  let values = ParsedValues(
-    positional: [],
-    options: ["db": [path], "chatID": ["1"], "text": ["hi"]],
-    flags: []
-  )
-  let runtime = RuntimeOptions(parsedValues: values)
-  var captured: MessageSendOptions?
-  try await SendCommand.run(
-    values: values, runtime: runtime,
-    sendMessage: { options in
-      captured = options
-    })
-  #expect(captured?.chatIdentifier == "+123")
-  #expect(captured?.chatGUID == "iMessage;+;chat123")
-  #expect(captured?.recipient.isEmpty == true)
-}
-
-@Test
-func watchCommandRejectsInvalidDebounce() async {
-  let values = ParsedValues(
-    positional: [],
-    options: ["debounce": ["nope"]],
-    flags: []
-  )
-  let runtime = RuntimeOptions(parsedValues: values)
-  do {
-    try await WatchCommand.spec.run(values, runtime)
-    #expect(Bool(false))
-  } catch let error as ParsedValuesError {
-    #expect(error.description.contains("Invalid value"))
-  } catch {
-    #expect(Bool(false))
+  func testHistoryCommandRunsWithChatID() async throws {
+    let path = try CommandTestDatabase.makePath()
+    let values = ParsedValues(
+      options: ["db": [path], "chatID": ["1"], "limit": ["5"]],
+      flags: ["jsonOutput"],
+      positional: []
+    )
+    let runtime = RuntimeOptions(parsedValues: values)
+    try await HistoryCommand.spec.run(values, runtime)
   }
-}
 
-@Test
-func watchCommandRunsWithStubStream() async throws {
-  let values = ParsedValues(
-    positional: [],
-    options: ["db": ["/tmp/unused"], "debounce": ["1ms"]],
-    flags: []
-  )
-  let runtime = RuntimeOptions(parsedValues: values)
-  let db = try Connection(.inMemory)
-  let store = try MessageStore(
-    connection: db,
-    path: ":memory:",
-    hasAttributedBody: false,
-    hasReactionColumns: false
-  )
-  let message = Message(
-    rowID: 1,
-    chatID: 1,
-    sender: "+123",
-    text: "hello",
-    date: Date(),
-    isFromMe: false,
-    service: "iMessage",
-    handleID: nil,
-    attachmentsCount: 2
-  )
-  let streamProvider:
-    (
-      MessageWatcher,
-      Int64?,
-      Int64?,
-      MessageWatcherConfiguration
-    ) -> AsyncThrowingStream<Message, Error> = { _, _, _, _ in
-      AsyncThrowingStream { continuation in
-        continuation.yield(message)
-        continuation.finish()
-      }
+  func testHistoryCommandRunsWithAttachmentsNonJson() async throws {
+    let path = try CommandTestDatabase.makePathWithAttachment()
+    let values = ParsedValues(
+      options: ["db": [path], "chatID": ["1"], "limit": ["5"]],
+      flags: ["attachments"],
+      positional: []
+    )
+    let runtime = RuntimeOptions(parsedValues: values)
+    try await HistoryCommand.spec.run(values, runtime)
+  }
+
+  func testChatsCommandRunsWithPlainOutput() async throws {
+    let path = try CommandTestDatabase.makePath()
+    let values = ParsedValues(
+      options: ["db": [path], "limit": ["5"]],
+      flags: [],
+      positional: []
+    )
+    let runtime = RuntimeOptions(parsedValues: values)
+    try await ChatsCommand.spec.run(values, runtime)
+  }
+
+  func testSendCommandRejectsMissingRecipient() async {
+    let values = ParsedValues(
+      options: ["text": ["hi"]],
+      flags: [],
+      positional: []
+    )
+    let runtime = RuntimeOptions(parsedValues: values)
+    do {
+      try await SendCommand.spec.run(values, runtime)
+      XCTFail("Should have thrown")
+    } catch let error as ParsedValuesError {
+      XCTAssertTrue(error.description.contains("Missing required option"))
+    } catch {
+      XCTFail("Unexpected error: \(error)")
     }
-  try await WatchCommand.run(
-    values: values,
-    runtime: runtime,
-    storeFactory: { _ in store },
-    streamProvider: streamProvider
-  )
-}
+  }
 
-@Test
-func watchCommandRunsWithJsonOutput() async throws {
-  let values = ParsedValues(
-    positional: [],
-    options: ["db": ["/tmp/unused"], "debounce": ["1ms"]],
-    flags: ["jsonOutput"]
-  )
-  let runtime = RuntimeOptions(parsedValues: values)
-  let db = try Connection(.inMemory)
-  try db.execute(
-    """
-    CREATE TABLE attachment (
-      ROWID INTEGER PRIMARY KEY,
-      filename TEXT,
-      transfer_name TEXT,
-      uti TEXT,
-      mime_type TEXT,
-      total_bytes INTEGER,
-      is_sticker INTEGER
-    );
-    """
-  )
-  try db.execute(
-    "CREATE TABLE message_attachment_join (message_id INTEGER, attachment_id INTEGER);")
-  try db.run(
-    """
-    INSERT INTO attachment(ROWID, filename, transfer_name, uti, mime_type, total_bytes, is_sticker)
-    VALUES (1, '/tmp/file.dat', 'file.dat', 'public.data', 'application/octet-stream', 10, 0)
-    """
-  )
-  try db.run("INSERT INTO message_attachment_join(message_id, attachment_id) VALUES (1, 1)")
+  func testSendCommandRunsWithStubSender() async throws {
+    let values = ParsedValues(
+      options: ["to": ["+15551234567"], "text": ["hi"]],
+      flags: [],
+      positional: []
+    )
+    let runtime = RuntimeOptions(parsedValues: values)
+    var captured: MessageSendOptions?
+    try await SendCommand.run(
+      values: values, runtime: runtime,
+      sendMessage: { options in
+        captured = options
+      })
+    XCTAssertEqual(captured?.recipient, "+15551234567")
+    XCTAssertEqual(captured?.text, "hi")
+  }
 
-  let store = try MessageStore(
-    connection: db,
-    path: ":memory:",
-    hasAttributedBody: false,
-    hasReactionColumns: false
-  )
-  let message = Message(
-    rowID: 1,
-    chatID: 1,
-    sender: "+123",
-    text: "hello",
-    date: Date(),
-    isFromMe: false,
-    service: "iMessage",
-    handleID: nil,
-    attachmentsCount: 1
-  )
-  let streamProvider:
-    (
-      MessageWatcher,
-      Int64?,
-      Int64?,
-      MessageWatcherConfiguration
-    ) -> AsyncThrowingStream<Message, Error> = { _, _, _, _ in
-      AsyncThrowingStream { continuation in
-        continuation.yield(message)
-        continuation.finish()
-      }
+  func testSendCommandResolvesChatID() async throws {
+    let path = try CommandTestDatabase.makePath()
+    let values = ParsedValues(
+      options: ["db": [path], "chatID": ["1"], "text": ["hi"]],
+      flags: [],
+      positional: []
+    )
+    let runtime = RuntimeOptions(parsedValues: values)
+    var captured: MessageSendOptions?
+    try await SendCommand.run(
+      values: values, runtime: runtime,
+      sendMessage: { options in
+        captured = options
+      })
+    XCTAssertEqual(captured?.chatIdentifier, "+123")
+    XCTAssertEqual(captured?.chatGUID, "iMessage;+;chat123")
+    XCTAssertEqual(captured?.recipient.isEmpty, true)
+  }
+
+  func testWatchCommandRejectsInvalidDebounce() async {
+    let values = ParsedValues(
+      options: ["debounce": ["nope"]],
+      flags: [],
+      positional: []
+    )
+    let runtime = RuntimeOptions(parsedValues: values)
+    do {
+      try await WatchCommand.spec.run(values, runtime)
+      XCTFail("Should have thrown")
+    } catch let error as ParsedValuesError {
+      XCTAssertTrue(error.description.contains("Invalid value"))
+    } catch {
+      XCTFail("Unexpected error: \(error)")
     }
-  try await WatchCommand.run(
-    values: values,
-    runtime: runtime,
-    storeFactory: { _ in store },
-    streamProvider: streamProvider
-  )
+  }
+
+  func testWatchCommandRunsWithStubPublisher() throws {
+    let values = ParsedValues(
+      options: ["db": ["/tmp/unused"], "debounce": ["1ms"]],
+      flags: [],
+      positional: []
+    )
+    let runtime = RuntimeOptions(parsedValues: values)
+    let db = try Connection(.inMemory)
+    let store = try MessageStore(
+      connection: db,
+      path: ":memory:",
+      hasAttributedBody: false,
+      hasReactionColumns: false
+    )
+    let message = Message(
+      rowID: 1,
+      chatID: 1,
+      sender: "+123",
+      text: "hello",
+      date: Date(),
+      isFromMe: false,
+      service: "iMessage",
+      handleID: nil,
+      attachmentsCount: 2
+    )
+    let publisherProvider:
+      (
+        MessageWatcher,
+        Int64?,
+        Int64?,
+        MessageWatcherConfiguration
+      ) -> AnyPublisher<Message, Error> = { _, _, _, _ in
+        let subject = PassthroughSubject<Message, Error>()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+          subject.send(message)
+          subject.send(completion: .finished)
+        }
+        return subject.eraseToAnyPublisher()
+      }
+    try WatchCommand.run(
+      values: values,
+      runtime: runtime,
+      storeFactory: { _ in store },
+      publisherProvider: publisherProvider
+    )
+  }
+
+  func testWatchCommandRunsWithJsonOutput() throws {
+    let values = ParsedValues(
+      options: ["db": ["/tmp/unused"], "debounce": ["1ms"]],
+      flags: ["jsonOutput"],
+      positional: []
+    )
+    let runtime = RuntimeOptions(parsedValues: values)
+    let db = try Connection(.inMemory)
+    try db.execute(
+      """
+      CREATE TABLE attachment (
+        ROWID INTEGER PRIMARY KEY,
+        filename TEXT,
+        transfer_name TEXT,
+        uti TEXT,
+        mime_type TEXT,
+        total_bytes INTEGER,
+        is_sticker INTEGER
+      );
+      """
+    )
+    try db.execute(
+      "CREATE TABLE message_attachment_join (message_id INTEGER, attachment_id INTEGER);")
+    try db.run(
+      """
+      INSERT INTO attachment(ROWID, filename, transfer_name, uti, mime_type, total_bytes, is_sticker)
+      VALUES (1, '/tmp/file.dat', 'file.dat', 'public.data', 'application/octet-stream', 10, 0)
+      """
+    )
+    try db.run("INSERT INTO message_attachment_join(message_id, attachment_id) VALUES (1, 1)")
+
+    let store = try MessageStore(
+      connection: db,
+      path: ":memory:",
+      hasAttributedBody: false,
+      hasReactionColumns: false
+    )
+    let message = Message(
+      rowID: 1,
+      chatID: 1,
+      sender: "+123",
+      text: "hello",
+      date: Date(),
+      isFromMe: false,
+      service: "iMessage",
+      handleID: nil,
+      attachmentsCount: 1
+    )
+    let publisherProvider:
+      (
+        MessageWatcher,
+        Int64?,
+        Int64?,
+        MessageWatcherConfiguration
+      ) -> AnyPublisher<Message, Error> = { _, _, _, _ in
+        let subject = PassthroughSubject<Message, Error>()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+          subject.send(message)
+          subject.send(completion: .finished)
+        }
+        return subject.eraseToAnyPublisher()
+      }
+    try WatchCommand.run(
+      values: values,
+      runtime: runtime,
+      storeFactory: { _ in store },
+      publisherProvider: publisherProvider
+    )
+  }
 }

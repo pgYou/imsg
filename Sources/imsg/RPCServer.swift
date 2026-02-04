@@ -1,5 +1,6 @@
 import Foundation
 import IMsgCore
+import Combine
 
 protocol RPCOutput: Sendable {
   func sendResponse(id: Any, result: Any)
@@ -145,33 +146,54 @@ final class RPCServer {
         let localSinceRowID = sinceRowID
         let localConfig = config
         let localIncludeAttachments = includeAttachments
+        var cancellable: AnyCancellable?
         let task = Task {
-          do {
-            for try await message in localWatcher.stream(
+          await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            cancellable = localWatcher.publisher(
               chatID: localChatID,
               sinceRowID: localSinceRowID,
               configuration: localConfig
-            ) {
-              if Task.isCancelled { return }
-              if !localFilter.allows(message) { continue }
-              let payload = try buildMessagePayload(
-                store: localStore,
-                cache: localCache,
-                message: message,
-                includeAttachments: localIncludeAttachments
-              )
-              localWriter.sendNotification(
-                method: "message",
-                params: ["subscription": subID, "message": payload]
-              )
-            }
-          } catch {
-            localWriter.sendNotification(
-              method: "error",
-              params: [
-                "subscription": subID,
-                "error": ["message": String(describing: error)],
-              ]
+            )
+            .sink(
+              receiveCompletion: { completion in
+                if case .failure(let error) = completion {
+                  localWriter.sendNotification(
+                    method: "error",
+                    params: [
+                      "subscription": subID,
+                      "error": ["message": String(describing: error)],
+                    ]
+                  )
+                }
+                continuation.resume()
+              },
+              receiveValue: { message in
+                if Task.isCancelled {
+                  cancellable?.cancel()
+                  return
+                }
+                if !localFilter.allows(message) { return }
+                do {
+                  let payload = try buildMessagePayload(
+                    store: localStore,
+                    cache: localCache,
+                    message: message,
+                    includeAttachments: localIncludeAttachments
+                  )
+                  localWriter.sendNotification(
+                    method: "message",
+                    params: ["subscription": subID, "message": payload]
+                  )
+                } catch {
+                  localWriter.sendNotification(
+                    method: "error",
+                    params: [
+                      "subscription": subID,
+                      "error": ["message": String(describing: error)],
+                    ]
+                  )
+                }
+              }
             )
           }
         }
@@ -285,7 +307,7 @@ private func buildMessagePayload(
   )
 }
 
-private final class RPCWriter: RPCOutput, @unchecked Sendable {
+private final class RPCWriter: RPCOutput {
   private let queue = DispatchQueue(label: "imsg.rpc.writer")
 
   func sendResponse(id: Any, result: Any) {
@@ -362,7 +384,7 @@ struct RPCError: Error {
   }
 }
 
-private final class ChatCache: @unchecked Sendable {
+private final class ChatCache {
   private let store: MessageStore
   private var infoCache: [Int64: ChatInfo] = [:]
   private var participantsCache: [Int64: [String]] = [:]

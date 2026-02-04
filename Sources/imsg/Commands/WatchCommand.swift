@@ -1,6 +1,8 @@
-import Commander
+// import Commander  // TODO: Replace with ArgumentParser
+import ArgumentParser
 import Foundation
 import IMsgCore
+import Combine
 
 enum WatchCommand {
   static let spec = CommandSpec(
@@ -35,23 +37,23 @@ enum WatchCommand {
       "imsg watch --chat-id 1 --participants +15551234567",
     ]
   ) { values, runtime in
-    try await run(values: values, runtime: runtime)
+    try run(values: values, runtime: runtime)
   }
 
   static func run(
     values: ParsedValues,
     runtime: RuntimeOptions,
     storeFactory: @escaping (String) throws -> MessageStore = { try MessageStore(path: $0) },
-    streamProvider:
+    publisherProvider:
       @escaping (
         MessageWatcher,
         Int64?,
         Int64?,
         MessageWatcherConfiguration
-      ) -> AsyncThrowingStream<Message, Error> = { watcher, chatID, sinceRowID, config in
-        watcher.stream(chatID: chatID, sinceRowID: sinceRowID, configuration: config)
+      ) -> AnyPublisher<Message, Error> = { watcher, chatID, sinceRowID, config in
+        watcher.publisher(chatID: chatID, sinceRowID: sinceRowID, configuration: config)
       }
-  ) async throws {
+  ) throws {
     let dbPath = values.option("db") ?? MessageStore.defaultPath
     let chatID = values.optionInt64("chatID")
     let debounceString = values.option("debounce") ?? "250ms"
@@ -76,40 +78,57 @@ enum WatchCommand {
       batchLimit: 100
     )
 
-    let stream = streamProvider(watcher, chatID, sinceRowID, config)
-    for try await message in stream {
-      if !filter.allows(message) {
-        continue
-      }
-      if runtime.jsonOutput {
-        let attachments = try store.attachments(for: message.rowID)
-        let reactions = try store.reactions(for: message.rowID)
-        let payload = MessagePayload(
-          message: message,
-          attachments: attachments,
-          reactions: reactions
-        )
-        try JSONLines.print(payload)
-        continue
-      }
-      let direction = message.isFromMe ? "sent" : "recv"
-      let timestamp = CLIISO8601.format(message.date)
-      Swift.print("\(timestamp) [\(direction)] \(message.sender): \(message.text)")
-      if message.attachmentsCount > 0 {
-        if showAttachments {
-          let metas = try store.attachments(for: message.rowID)
-          for meta in metas {
-            let name = displayName(for: meta)
-            Swift.print(
-              "  attachment: name=\(name) mime=\(meta.mimeType) missing=\(meta.missing) path=\(meta.originalPath)"
-            )
+    let publisher = publisherProvider(watcher, chatID, sinceRowID, config)
+    var cancellables = Set<AnyCancellable>()
+    let semaphore = DispatchSemaphore(value: 0)
+    
+    publisher
+      .sink(
+        receiveCompletion: { completion in
+          switch completion {
+          case .finished:
+            break
+          case .failure(let error):
+            Swift.print("Error: \(error)", to: &StderrOutputStream.shared)
           }
-        } else {
-          Swift.print(
-            "  (\(message.attachmentsCount) attachment\(pluralSuffix(for: message.attachmentsCount)))"
-          )
+          semaphore.signal()
+        },
+        receiveValue: { message in
+          do {
+            if !filter.allows(message) {
+              return
+            }
+            if runtime.jsonOutput {
+              let attachments = try store.attachments(for: message.rowID)
+              let reactions = try store.reactions(for: message.rowID)
+              let payload = MessagePayload(
+                message: message,
+                attachments: attachments,
+                reactions: reactions
+              )
+              try JSONLines.print(payload)
+              return
+            }
+            let direction = message.isFromMe ? "sent" : "recv"
+            let timestamp = CLIISO8601.format(message.date)
+            Swift.print("\(timestamp) [\(direction)] \(message.sender): \(message.text)")
+            if message.attachmentsCount > 0 {
+              if showAttachments {
+                let attachments = try store.attachments(for: message.rowID)
+                for attachment in attachments {
+                  Swift.print("  📎 \(attachment.filename ?? "Unknown") (\(attachment.mimeType ?? "unknown"))")
+                }
+              } else {
+                Swift.print("  📎 \(message.attachmentsCount) attachment(s)")
+              }
+            }
+          } catch {
+            Swift.print("Error processing message: \(error)", to: &StderrOutputStream.shared)
+          }
         }
-      }
-    }
+      )
+      .store(in: &cancellables)
+    
+    semaphore.wait()
   }
 }

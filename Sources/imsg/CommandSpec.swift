@@ -1,6 +1,7 @@
-import Commander
+// import Commander  // TODO: Replace with ArgumentParser
+import ArgumentParser
 
-struct CommandSpec: @unchecked Sendable {
+struct CommandSpec {
   let name: String
   let abstract: String
   let discussion: String?

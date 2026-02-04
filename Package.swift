@@ -1,15 +1,15 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 5.9
 import PackageDescription
 
 let package = Package(
     name: "imsg",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v12)],
     products: [
         .library(name: "IMsgCore", targets: ["IMsgCore"]),
         .executable(name: "imsg", targets: ["imsg"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/steipete/Commander.git", from: "0.2.0"),
+        .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
         .package(url: "https://github.com/stephencelis/SQLite.swift.git", from: "0.15.4"),
         .package(url: "https://github.com/marmelroy/PhoneNumberKit.git", from: "4.2.2"),
     ],
@@ -28,7 +28,7 @@ let package = Package(
         name: "imsg",
         dependencies: [
             "IMsgCore",
-            .product(name: "Commander", package: "Commander"),
+            .product(name: "ArgumentParser", package: "swift-argument-parser"),
         ],
         exclude: [
             "Resources/Info.plist",

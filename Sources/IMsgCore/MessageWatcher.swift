@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Combine
 
 public struct MessageWatcherConfiguration: Sendable, Equatable {
   public var debounceInterval: TimeInterval
@@ -11,39 +12,41 @@ public struct MessageWatcherConfiguration: Sendable, Equatable {
   }
 }
 
-public final class MessageWatcher: @unchecked Sendable {
+public final class MessageWatcher {
   private let store: MessageStore
 
   public init(store: MessageStore) {
     self.store = store
   }
 
-  public func stream(
+  public func publisher(
     chatID: Int64? = nil,
     sinceRowID: Int64? = nil,
     configuration: MessageWatcherConfiguration = MessageWatcherConfiguration()
-  ) -> AsyncThrowingStream<Message, Error> {
-    AsyncThrowingStream { continuation in
-      let state = WatchState(
-        store: store,
-        chatID: chatID,
-        sinceRowID: sinceRowID,
-        configuration: configuration,
-        continuation: continuation
-      )
-      state.start()
-      continuation.onTermination = { _ in
+  ) -> AnyPublisher<Message, Error> {
+    let subject = PassthroughSubject<Message, Error>()
+    let state = WatchState(
+      store: store,
+      chatID: chatID,
+      sinceRowID: sinceRowID,
+      configuration: configuration,
+      subject: subject
+    )
+    state.start()
+    
+    return subject
+      .handleEvents(receiveCancel: {
         state.stop()
-      }
-    }
+      })
+      .eraseToAnyPublisher()
   }
 }
 
-private final class WatchState: @unchecked Sendable {
+private final class WatchState {
   private let store: MessageStore
   private let chatID: Int64?
   private let configuration: MessageWatcherConfiguration
-  private let continuation: AsyncThrowingStream<Message, Error>.Continuation
+  private let subject: PassthroughSubject<Message, Error>
   private let queue = DispatchQueue(label: "imsg.watch", qos: .userInitiated)
 
   private var cursor: Int64
@@ -55,12 +58,12 @@ private final class WatchState: @unchecked Sendable {
     chatID: Int64?,
     sinceRowID: Int64?,
     configuration: MessageWatcherConfiguration,
-    continuation: AsyncThrowingStream<Message, Error>.Continuation
+    subject: PassthroughSubject<Message, Error>
   ) {
     self.store = store
     self.chatID = chatID
     self.configuration = configuration
-    self.continuation = continuation
+    self.subject = subject
     self.cursor = sinceRowID ?? 0
   }
 
@@ -72,7 +75,7 @@ private final class WatchState: @unchecked Sendable {
         }
         self.poll()
       } catch {
-        self.continuation.finish(throwing: error)
+        self.subject.send(completion: .failure(error))
       }
     }
 
@@ -82,7 +85,6 @@ private final class WatchState: @unchecked Sendable {
         sources.append(source)
       }
     }
-
   }
 
   func stop() {
@@ -91,6 +93,7 @@ private final class WatchState: @unchecked Sendable {
         source.cancel()
       }
       self.sources.removeAll()
+      self.subject.send(completion: .finished)
     }
   }
 
@@ -131,13 +134,13 @@ private final class WatchState: @unchecked Sendable {
         limit: configuration.batchLimit
       )
       for message in messages {
-        continuation.yield(message)
+        subject.send(message)
         if message.rowID > cursor {
           cursor = message.rowID
         }
       }
     } catch {
-      continuation.finish(throwing: error)
+      subject.send(completion: .failure(error))
     }
   }
 }

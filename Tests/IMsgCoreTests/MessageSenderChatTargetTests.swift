@@ -1,5 +1,5 @@
 import Foundation
-import Testing
+import XCTest
 
 @testable import IMsgCore
 
@@ -67,39 +67,39 @@ private final class TestMessageSender {
   }
 }
 
-@Test
-func messageSenderPrefersHandleWhenChatIdentifierLooksLikeHandle() throws {
-  let sender = TestMessageSender()
-  let options = MessageSendOptions(
-    recipient: "",
-    text: "hi",
-    attachmentPath: "",
-    service: .auto,
-    region: "US",
-    chatIdentifier: "imessage:+15551234567",
-    chatGUID: "iMessage;+;chat123"
-  )
-  let captured = try sender.send(options)
+final class MessageSenderChatTargetTests: XCTestCase {
+  func testMessageSenderPrefersHandleWhenChatIdentifierLooksLikeHandle() throws {
+    let sender = TestMessageSender()
+    let options = MessageSendOptions(
+      recipient: "",
+      text: "hi",
+      attachmentPath: "",
+      service: .auto,
+      region: "US",
+      chatIdentifier: "imessage:+15551234567",
+      chatGUID: "iMessage;+;chat123"
+    )
+    let captured = try sender.send(options)
 
-  #expect(captured[5].isEmpty)
-  #expect(captured[6] == "0")
-  #expect(captured[0].contains("15551234567"))
-}
+    XCTAssertTrue(captured[5].isEmpty)
+    XCTAssertEqual(captured[6], "0")
+    XCTAssertTrue(captured[0].contains("15551234567"))
+  }
 
-@Test
-func messageSenderUsesChatGuidWhenIdentifierIsGroupHandle() throws {
-  let sender = TestMessageSender()
-  let options = MessageSendOptions(
-    recipient: "",
-    text: "hi",
-    attachmentPath: "",
-    service: .auto,
-    region: "US",
-    chatIdentifier: "iMessage;+;group123",
-    chatGUID: "iMessage;+;group123"
-  )
-  let captured = try sender.send(options)
+  func testMessageSenderUsesChatGuidWhenIdentifierIsGroupHandle() throws {
+    let sender = TestMessageSender()
+    let options = MessageSendOptions(
+      recipient: "",
+      text: "hi",
+      attachmentPath: "",
+      service: .auto,
+      region: "US",
+      chatIdentifier: "iMessage;+;group123",
+      chatGUID: "iMessage;+;group123"
+    )
+    let captured = try sender.send(options)
 
-  #expect(captured[5] == "iMessage;+;group123")
-  #expect(captured[6] == "1")
+    XCTAssertEqual(captured[5], "iMessage;+;group123")
+    XCTAssertEqual(captured[6], "1")
+  }
 }

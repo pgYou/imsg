@@ -1,6 +1,7 @@
+import Combine
 import Foundation
 import SQLite
-import Testing
+import XCTest
 
 @testable import IMsgCore
 
@@ -45,21 +46,32 @@ private enum WatcherTestDatabase {
   }
 }
 
-@Test
-func messageWatcherYieldsExistingMessages() async throws {
-  let store = try WatcherTestDatabase.makeStore()
-  let watcher = MessageWatcher(store: store)
-  let stream = watcher.stream(
-    chatID: nil,
-    sinceRowID: -1,
-    configuration: MessageWatcherConfiguration(debounceInterval: 0.01, batchLimit: 10)
-  )
+final class MessageWatcherTests: XCTestCase {
+  func testMessageWatcherYieldsExistingMessages() throws {
+    let store = try WatcherTestDatabase.makeStore()
+    let watcher = MessageWatcher(store: store)
+    let publisher = watcher.publisher(
+      chatID: nil,
+      sinceRowID: -1,
+      configuration: MessageWatcherConfiguration(debounceInterval: 0.01, batchLimit: 10)
+    )
 
-  let task = Task { () throws -> Message? in
-    var iterator = stream.makeAsyncIterator()
-    return try await iterator.next()
+    let expectation = self.expectation(description: "Received message")
+    var receivedMessage: Message?
+    var cancellables = Set<AnyCancellable>()
+
+    publisher
+      .first()
+      .sink(
+        receiveCompletion: { _ in },
+        receiveValue: { message in
+          receivedMessage = message
+          expectation.fulfill()
+        }
+      )
+      .store(in: &cancellables)
+
+    waitForExpectations(timeout: 2)
+    XCTAssertEqual(receivedMessage?.text, "hello")
   }
-
-  let message = try await task.value
-  #expect(message?.text == "hello")
 }

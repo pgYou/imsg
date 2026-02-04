@@ -11,7 +11,8 @@ BUILD_MODE=${BUILD_MODE:-release}
 CODESIGN_IDENTITY=${CODESIGN_IDENTITY:-"-"}
 
 for ARCH in "${ARCH_LIST[@]}"; do
-  swift build -c "$BUILD_MODE" --product "$APP_NAME" --arch "$ARCH"
+  swift build -c "$BUILD_MODE" --product "$APP_NAME" --arch "$ARCH" \
+    -Xswiftc -target -Xswiftc "${ARCH}-apple-macos12.0"
 done
 
 FIRST_ARCH="${ARCH_LIST[0]}"
